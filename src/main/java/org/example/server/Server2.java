@@ -1,48 +1,105 @@
 package org.example.server;
 
-import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.*;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.sql.*;
 import java.util.Base64;
 
 
 public class Server2 {
     private static Connection connection;
+    private static final Logger logger = LogManager.getLogger(Server2.class);
 
-    public static void main(String[] args) throws IOException {
-        String url = "jdbc:sqlite:/Users/vaneks/java/Diary/diary.db";
+    public static void main(String[] args) throws Exception {
         // Подключение к базе данных SQLite
+        String url = "jdbc:sqlite:/Users/vaneks/java/Diary/diary.db";
         try {
             connection = DriverManager.getConnection(url);
+            logger.info("Успешное подключение к базе данных");
         } catch (SQLException e) {
-            System.out.println("Не удалось подключиться к базе данных");
-            e.printStackTrace();
+            logger.error("Не удалось подключиться к базе данных", e);
         }
-        try {
 
+        // Настройка HTTPS сервера
+        HttpsServer server = HttpsServer.create(new InetSocketAddress(8443), 0);
+        //Создает объект SSLContext, который используется для управления шифрованием SSL/TLS.
+        SSLContext sslContext = SSLContext.getInstance("TLS");
 
-            //создаем соединение с порт
-            HttpServer server = HttpServer.create(new InetSocketAddress(8083), 0);
+        //Задает пароль для доступа к KeyStore.
+        char[] password = "qwerty".toCharArray();
+        //Создает объект KeyStore для хранения сертификатов и ключей, используя формат JKS.
+        KeyStore ks = KeyStore.getInstance("JKS");
+        //Открывает файл KeyStore, который находится в указанном пути.
+        FileInputStream fis = new FileInputStream("/Users/vaneks/java/Diary/server.jks");
+        //Загружает KeyStore из файла с заданным паролем.
+        ks.load(fis, password);
 
-            //обработка адресных путей
-            // Обработка адресных путей
-            server.createContext("/", new Handler());
-            server.createContext("/user", new AuthHandler(new GetHandler()));
-            server.createContext("/use", new PostHandler());
-            server.createContext("/put", new PutHandler());
-            server.createContext("/delete", new DeleteHandler());
-            server.setExecutor(null); // Количество потоков
-            server.start();
-        } catch (Exception e) {
-            e.printStackTrace();
+        //Создает объект KeyManagerFactory для управления ключами.
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+        //Инициализирует KeyManagerFactory с помощью загруженного KeyStore и пароля.
+        kmf.init(ks, password);
+        //Создает объект TrustManagerFactory для управления сертификатами доверия.
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+        //Инициализирует TrustManagerFactory с помощью загруженного KeyStore.
+        tmf.init(ks);
+        //Инициализирует SSLContext с помощью ключей (kmf.getKeyManagers()) и сертификатами доверия
+        // (tmf.getTrustManagers()). null используется для инициализации генератора случайных чисел.
+        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
-        }
+        //Устанавливает HttpsConfigurator для сервера, который будет управлять параметрами SSL/TLS для каждого соединения.
+        server.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
+            public void configure(HttpsParameters params) {
+                try {
+                    //Получает стандартный SSLContext, который используется по умолчанию в JVM.
+                    SSLContext context = SSLContext.getDefault();
+                    // Создает объект SSLEngine, который управляет шифрованием SSL/TLS.
+                    SSLEngine engine = context.createSSLEngine();
+                    params.setNeedClientAuth(false);
+                    SSLParameters defaultSSLParameters = context.getDefaultSSLParameters();
+                    //Устанавливает стандартные параметры SSL/TLS для соединения.
+                    params.setSSLParameters(defaultSSLParameters);
+                } catch (Exception e) {
+                    logger.error("Ошибка настройки HTTPS", e);
+                }
+            }
+        });
+
+        logger.info("Успешное подключение к серверу");
+
+        // Обработка корневого пути
+        server.createContext("/", new Handler());
+
+        // Обработка пользователей
+        server.createContext("/users", exchange -> {
+            // Получение HTTP-метода
+            String method = exchange.getRequestMethod();
+
+            // Выбор обработчика в зависимости от метода
+            if (method.equals("GET")) {
+                new AuthHandler(new GetHandler()).handle(exchange);
+            } else if (method.equals("POST")) {
+                new PostHandler().handle(exchange);
+            } else if (method.equals("PUT")) {
+                new PutHandler().handle(exchange);
+            } else if (method.equals("DELETE")) {
+                new DeleteHandler().handle(exchange);
+            } else {
+                exchange.sendResponseHeaders(405, 0);
+                exchange.close();
+            }
+        });
+        server.setExecutor(null); // Количество потоков
+        server.start();
+        logger.info("Сервер запущен и доступен по HTTPS на порту 8443");
     }
 
     static class AuthHandler implements HttpHandler {
@@ -54,22 +111,20 @@ public class Server2 {
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            //извлекает заголовок запроса Auth и сохраняет его в переменной authHeader.
+            //exchange.getRequestHeaders().getFirst("Authorization");: Извлекает заголовок "Authorization" из HTTP-запроса.
+            // Этот заголовок содержит информацию об аутентификации.
             String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
-//если заголовок "Authorization" не равен null и начинается с "Basic ", это означает, что используется
-// Basic. В этом случае блок кода внутри выполняется.
             if (authHeader != null && authHeader.startsWith("Basic ")) {
-                //Из заголовка "Authorization" извлекаются закодированные учетные данные (имя пользователя и пароль).
                 String encodedCredentials = authHeader.substring("Basic ".length());
-                //Закодированные учетные данные декодируются с помощью Base64 и преобразуются в строку credentials.
+                //Декодирует учетные данные, используя Base64, и преобразует их в строку.
                 String credentials = new String(Base64.getDecoder().decode(encodedCredentials), StandardCharsets.UTF_8);
                 String[] parts = credentials.split(":");
                 String name = parts[0];
                 String password = parts[1];
-//Выполняется метод authenticate для проверки предоставленных учетных данных.
-// Если проверка прошла успешно, код внутри блока if выполняется.
+                //Проверяет учетные данные, используя метод authenticate. Этот метод не показан в коде, но он должен проверять
+                // правильность имени пользователя и пароля.
                 if (authenticate(name, password)) {
-                    nextHandler.handle(exchange);// Передача управления следующему обработчику
+                    nextHandler.handle(exchange);
                     return;
                 }
             }
@@ -78,6 +133,7 @@ public class Server2 {
             exchange.getResponseBody().write("Not Authorized!".getBytes());
             exchange.close();
         }
+
         private boolean authenticate(String name, String password) {
             String url = "jdbc:sqlite:/Users/vaneks/java/Diary/diary.db";
             try (Connection connection = DriverManager.getConnection(url)) {
@@ -89,25 +145,18 @@ public class Server2 {
                     return rs.next(); // Если найден пользователь, возвращаем true
                 }
             } catch (SQLException e) {
-                System.out.println("нет authenticate");;
-                e.printStackTrace();
+                logger.error("Ошибка при аутентификации", e);
                 return false;
             }
         }
-
     }
-
 
     static class Handler implements HttpHandler {
         @Override
-        //запрос от сервера, можем считывать и передавать данные/делать ответы и запросы через exchange
         public void handle(HttpExchange exchange) throws IOException {
             String response = "прив";
-            // пришли ответ респонс/заголовок ответа
             exchange.sendResponseHeaders(200, response.getBytes().length);
-            // внутренности ответа
             OutputStream os = exchange.getResponseBody();
-            // читает наш респонс
             os.write(response.getBytes());
             os.close();
         }
@@ -116,7 +165,11 @@ public class Server2 {
     static class GetHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String data = getFromDatabase();
+            URI requestURI = exchange.getRequestURI();
+            String query = requestURI.getQuery();
+            String name = getQueryParam(query, "name");
+
+            String data = getFromDatabase(name);
             byte[] response = data.getBytes();
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.getResponseHeaders().set("Content-Length", String.valueOf(response.length));
@@ -128,28 +181,52 @@ public class Server2 {
             }
         }
 
-        private String getFromDatabase() {
+        private String getFromDatabase(String name) {
             StringBuilder response = new StringBuilder();
             try {
-                Statement statement = connection.createStatement();
-                ResultSet resultSet = statement.executeQuery("SELECT * FROM users");
+                String query = "SELECT * FROM users WHERE name = ?";
+                try (PreparedStatement statement = connection.prepareStatement(query)) {
+                    statement.setString(1, name);
+                    ResultSet resultSet = statement.executeQuery();
 
-                // Формирование ответа на основе данных из базы
-                while (resultSet.next()) {
-                    int id = resultSet.getInt("id");
-                    String name = resultSet.getString("name");
-                    String password = resultSet.getString("password");
-                    response.append("ID: ").append(id).append(", Имя: ").append(name).append(", пароль: ").append(password).append("\n");
+                    // Формирование ответа на основе данных из базы
+                    while (resultSet.next()) {
+                        int id = resultSet.getInt("id");
+                        String userName = resultSet.getString("name");
+                        String password = resultSet.getString("password");
+                        response.append("{")
+                                .append("\"ID\":").append(id).append(", ")
+                                .append("\"Имя\":\"").append(userName).append("\", ")
+                                .append("\"пароль\":\"").append(password).append("\"")
+                                .append("}\n");
+                    }
                 }
             } catch (SQLException e) {
-                System.out.println("Не удалось выполнить запрос к базе данных");
-                e.printStackTrace();
-                response.append("Ошибка при получении данных из базы");
+                logger.error("Не удалось подключиться к базе данных", e);
             }
             return response.toString();
         }
-    }
 
+        private String getQueryParam(String query, String param) {
+            if (query == null) {
+                return null;
+            }
+            //Разделяет строку запроса (query) по символу "&", создавая массив строк, где каждая строка представляет
+            // пару ключ-значение (например, "name=John&age=30").
+            String[] pairs = query.split("&");
+            for (String pair : pairs) {
+                //Разделяет пару ключ-значение (pair) по символу "=", создавая массив из двух строк: ключа (keyValue[0]) и значения (keyValue[1]).
+                String[] keyValue = pair.split("=");
+                //Проверяет, является ли длина массива keyValue равной 2 (чтобы убедиться, что разделение произошло корректно)
+                // и совпадает ли ключ (keyValue[0]) с заданным параметром (param).
+                if (keyValue.length == 2 && keyValue[0].equals(param)) {
+                    //Если ключ совпадает с параметром, функция возвращает значение параметра (keyValue[1]).
+                    return keyValue[1];
+                }
+            }
+            return null;
+        }
+    }
     static class PostHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -196,8 +273,7 @@ public class Server2 {
             statement.setString(2, hashedPassword);
             statement.executeUpdate();
         } catch (SQLException e) {
-            System.out.println("Не удалось сохранить пользователя в базу данных: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Не удалось сохранить пользователя в базу данных", e);
         }
     }
 
@@ -244,8 +320,7 @@ public class Server2 {
                 statement.setInt(3, id);
                 statement.executeUpdate();
             } catch (SQLException e) {
-                System.out.println("Не удалось обновить пользователя в базе данных: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Не удалось обновить пользователя в базе данных", e);
             }
         }
     }
@@ -256,7 +331,7 @@ public class Server2 {
             // Извлеките логин пользователя из URL-адреса
 
             String uri = exchange.getRequestURI().toString();
-            String login = uri.substring("/delete/".length());
+            String login = uri.substring("/users/".length());
             // Удалите пользователя из базы данных SQLite
             DeleteUserToDatabase(login);
 
@@ -281,8 +356,7 @@ public class Server2 {
             statement.setString(1, login);
             statement.executeUpdate();
         } catch (SQLException e) {
-            System.out.println("Не удалось удалить пользователя из базы данных: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Не удалось удалить пользователя из базы данных", e);
         }
     }
 

@@ -48,7 +48,8 @@
         </dependency>
 
 
-        <!-- https://mavenlibs.com/maven/dependency/uk.org.retep.xmpp.protocol/bytestreams -->
+
+
 
 
         <dependency>
@@ -68,32 +69,6 @@
             <version>1.4.5</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.springframework/spring-web -->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework</groupId>-->
-<!--            <artifactId>spring-web</artifactId>-->
-<!--            <version>6.1.8</version>-->
-<!--        </dependency>-->
-
-<!--        &lt;!&ndash; https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-web &ndash;&gt;-->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.boot</groupId>-->
-<!--            <artifactId>spring-boot-starter-web</artifactId>-->
-<!--            <version>3.2.6</version>-->
-<!--        </dependency>-->
-        <!-- https://mvnrepository.com/artifact/org.springframework/spring-context -->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework</groupId>-->
-<!--            <artifactId>spring-context</artifactId>-->
-<!--            <version>6.1.8</version>-->
-<!--        </dependency>-->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework</groupId>-->
-<!--            <artifactId>spring-context</artifactId>-->
-<!--            <version>6.1.8</version>-->
-<!--            <scope>runtime</scope>-->
-<!--        </dependency>-->
-
 
 
         <dependency>
@@ -106,12 +81,6 @@
             <artifactId>log4j-slf4j-impl</artifactId>
             <version>2.19.0</version>
         </dependency>
-
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.security</groupId>-->
-<!--            <artifactId>spring-security-crypto</artifactId>-->
-<!--            <version>5.5.3</version> &lt;!&ndash; Указать актуальную версию &ndash;&gt;-->
-<!--        </dependency>-->
 
 
 
@@ -130,6 +99,18 @@
             <version>RELEASE</version>
             <scope>compile</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.17.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.17.0</version>
+        </dependency>
+
     </dependencies>
 
 </project>
