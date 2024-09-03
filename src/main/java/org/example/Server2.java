@@ -1,4 +1,4 @@
-package org.example.server;
+package org.example;
 
 import com.sun.net.httpserver.*;
 import org.apache.commons.codec.digest.DigestUtils;
